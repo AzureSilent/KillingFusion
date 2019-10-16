@@ -273,8 +273,11 @@ void DisplacementField::testKillingEnergy()
 
 Eigen::Vector3d DisplacementField::computeKillingEnergyGradient(const Eigen::Vector3i &spatialIndex) const
 {
-    if ((spatialIndex.array() < 2 * deltaSize).any() || (spatialIndex.array() >= (m_gridSize.array() - 2 * deltaSize)).any())
-        return Eigen::Vector3d::Zero();
+	//这个函数在主程序中没有使用，但有一个类型bug，作者是怎么编译通过的。。。
+	int a = (int) 2 * deltaSize;
+    //if ((spatialIndex.array() < 2 * deltaSize).any() || (spatialIndex.array() >= (m_gridSize.array() - 2 * deltaSize)).any())
+	if ((spatialIndex.array() < 2 * deltaSize).any() || (spatialIndex.array() >= (m_gridSize.array() - a )).any())
+		return Eigen::Vector3d::Zero();
 
     int x = spatialIndex(0), y = spatialIndex(1), z = spatialIndex(2);
     Eigen::Vector3d killingEnergyGrad;
@@ -330,6 +333,7 @@ Eigen::Vector3d DisplacementField::computeKillingEnergyGradient2(const Eigen::Ve
     displacement_yz = (displacement_xyplus1zplus1 + displacement_xyminus1zminus1 - displacement_xyplus1zminus1 - displacement_xyminus1zplus1);
     displacement_xy = (displacement_xplus1yplus1z + displacement_xminus1yminus1z - displacement_xplus1yminus1z - displacement_xminus1yplus1z);
 
+	// 这里好像完全算的不对，前面丢失了雅克比项，后面的完全不对了
     Eigen::Vector3d killingEnergyGradient = -2 * (displacement_xx + displacement_yy + displacement_zz) +
                                             -2 * gammaKilling * Eigen::Vector3d(
                                                 displacement_xx(0) + displacement_xy(1) + displacement_xz(2), 

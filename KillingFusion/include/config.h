@@ -36,9 +36,15 @@ enum DEFORMABLE_DATASET
 const extern DEFORMABLE_DATASET datasetType;
 const extern int numImageFiles[2];
 const extern std::string imageDir[2];
+// 深度相机内参文件地址，必须是3*3矩阵
 const extern std::string intrinsicParamsFile;
 const extern double datasetDepthMinMaxValues[2][2];
 const extern std::string outputDir[2];
+
+//图像数据目录
+const extern std::string DATA_DIR;
+//图像数据输出目录
+const extern std::string OUTPUT_DIR;
 
 /**
  * Killing Fusion Pipeline configuration

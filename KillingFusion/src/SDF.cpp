@@ -143,8 +143,8 @@ void SDF::integrateDepthFrame(cv::Mat depthFrame,
     int w = depthFrame.cols;
     int h = depthFrame.rows;
 
-    Eigen::Matrix3d depthIntrinsicMatrixInv = depthIntrinsicMatrix.inverse();
-    Eigen::Matrix4d world_to_camera_pose = depthFrameC2WPose.inverse();
+    // Eigen::Matrix3d depthIntrinsicMatrixInv = depthIntrinsicMatrix.inverse(); 未使用的变量
+	Eigen::Matrix4d world_to_camera_pose = depthFrameC2WPose.inverse();
 
     for (int z = 0; z < m_gridSize(2); z++)
     {
@@ -157,8 +157,10 @@ void SDF::integrateDepthFrame(cv::Mat depthFrame,
                 double X = m_voxelSize * (x + 0.5) + m_min3dLoc(0);
                 // Compute 3d location of center of voxel
                 // Backproject it to the depth image
+					//世界坐标系->相机坐标系
                 Eigen::Vector4d voxelCenter(X, Y, Z, 1);
                 Eigen::Vector4d voxelCenterInCamera = world_to_camera_pose * voxelCenter;
+				//相机坐标系 映射到 感光照片上
                 Eigen::Vector3d voxelPixelLocation(voxelCenterInCamera(0) / voxelCenterInCamera(2),
                                                    voxelCenterInCamera(1) / voxelCenterInCamera(2), 1);
                 voxelPixelLocation = depthIntrinsicMatrix * voxelPixelLocation;
@@ -190,6 +192,7 @@ void SDF::integrateDepthFrame(cv::Mat depthFrame,
                 m_voxelGridTSDF.at(index) =
                     (m_voxelGridTSDF.at(index) * m_voxelGridWeight.at(index) + dist) /
                     (m_voxelGridWeight.at(index) + 1);
+				// 这里统一设置新的权重为1
                 m_voxelGridWeight.at(index) += 1;
             }
         }
@@ -500,6 +503,7 @@ long SDF::getWeightAtIndex(int x, int y, int z) const
     return m_voxelGridWeight.at(z * m_gridSpacingPerAxis(2) + y * m_gridSpacingPerAxis(1) + x);
 }
 
+//给定空间坐标，依据三线性差值计算该点的实际TSDF值
 double SDF::getDistance(const Eigen::Vector3d &gridLocation) const
 {
     // Substract 0.5 since, grid index (x,y,z) stores distance value for center (x,y,z)+(0.5,0.5,0.5)
@@ -509,6 +513,7 @@ double SDF::getDistance(const Eigen::Vector3d &gridLocation) const
     Eigen::Vector3i bottomLeftFrontIndex = trueGridLocation.cast<int>();
 
     // ToDo - Compute indices yourself to make faster. Done as below to get implementation correct first.
+	// 通过三线性差值 计算体素中心点的实际SDF值
     double vertex_000 = getDistanceAtIndex(bottomLeftFrontIndex + Eigen::Vector3i(0, 0, 0));
     double vertex_001 = getDistanceAtIndex(bottomLeftFrontIndex + Eigen::Vector3i(1, 0, 0));
     double vertex_010 = getDistanceAtIndex(bottomLeftFrontIndex + Eigen::Vector3i(0, 1, 0));
@@ -570,6 +575,7 @@ void SDF::testGetDistance()
 double SDF::getDistance(const Eigen::Vector3i &spatialIndex,
                        const DisplacementField *displacementField) const
 {
+	
     Eigen::Vector3d displacedGridLocation = spatialIndex.cast<double>() + displacementField->getDisplacementAt(spatialIndex) + Eigen::Vector3d(0.5, 0.5, 0.5);
     return getDistance(displacedGridLocation);
 }
@@ -577,6 +583,9 @@ double SDF::getDistance(const Eigen::Vector3i &spatialIndex,
 double SDF::getDistancef(const Eigen::Vector3d &gridLocation,
                         const DisplacementField *displacementField) const
 {
+	// 这里最后还有必要加0.5吗？
+	// gridLocation是需要计算的精确位置，形变场依据该值三线性差值得到形变后的坐标，
+	// 对形变后的坐标+0.5 抵消后面方程中减去的0.5 ...
     Eigen::Vector3d displacedGridLocation = gridLocation + displacementField->getDisplacementAtf(gridLocation) + Eigen::Vector3d(0.5, 0.5, 0.5);
     return getDistance(displacedGridLocation);
 }
@@ -723,9 +732,12 @@ void SDF::testComputeDistanceGradient()
     }
 }
 
+// 计算sdf关于形变的梯度,注意，差分的分母是以体素为单位的，不是实际距离
+// 分别计算每个轴，再每个轴上，向正负方向施加微小形变，计算sdf差分
 Eigen::Vector3d SDF::computeDistanceGradient(const Eigen::Vector3i &spatialIndex,
                                              const DisplacementField *displacementField) const
 {
+	//spatialIndex 是体素整数id，体素中心需要+0.5
     Eigen::Vector3d gridLocation = spatialIndex.cast<double>() + Eigen::Vector3d(0.5, 0.5, 0.5);
     const Eigen::Vector3d forwardDiffDelta[3] = {deltaSize * Eigen::Vector3d(1, 0, 0),
                                                  deltaSize * Eigen::Vector3d(0, 1, 0),

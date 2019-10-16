@@ -11,7 +11,7 @@ int main(int argc, char ** argv) {
   DatasetReader datasetReader(DATA_DIR);
   KillingFusion fusion(datasetReader);
   DisplacementField::testJacobian();
-  DisplacementField::testKillingEnergy();
+  //DisplacementField::testKillingEnergy();
   SDF::testGetDistance();
   SDF::testGetWeight();
   SDF::testComputeDistanceGradient();
@@ -19,6 +19,6 @@ int main(int argc, char ** argv) {
   // fusion.processTest(1);
   // fusion.processTest(2);
   // fusion.processTest(3);
-  // fusion.process();
+  fusion.process();
 }
 

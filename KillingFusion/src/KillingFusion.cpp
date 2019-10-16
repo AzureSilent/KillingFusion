@@ -21,9 +21,9 @@ KillingFusion::KillingFusion(DatasetReader datasetReader)
                            frameBound.first,
                            frameBound.second,
                            UnknownClipDistance);
-  cout << m_canonicalSdf->getGridSize().transpose() << endl;
+  cout << "Grid Size:" << m_canonicalSdf->getGridSize().transpose() << endl;
   m_startFrame = 1;
-  m_endFrame = 50;
+  m_endFrame = 99;
   m_stride = 1;
   m_currFrameIndex = m_startFrame;
   m_prev2CanDisplacementField = nullptr;
@@ -206,6 +206,10 @@ void KillingFusion::processTest(int testType)
   delete next2CanDisplacementField;
 }
 
+// 计算SDF 相机位姿矩阵是单位阵，因此这个新的SDF是在相机坐标系下建立的
+// 这个原文是有出入的：Given a new depth frame Dn, we register it
+// 因为没有配准，也是导致后面computeDisplacementField无法收敛的一个重要原因。但不是全部
+// to the previous one and obtain an estimate of its pose relative to the global model.
 SDF *KillingFusion::computeSDF(int frameIndex)
 {
   // ToDo: SDF class should compute itself
@@ -245,15 +249,18 @@ void KillingFusion::computeDisplacementField(const SDF *src,
   // Process at each voxel location
   Eigen::Vector3i srcGridSize = src->getGridSize();
 
-  if (UpdateAllVoxelsInEachIter)
+  if (UpdateAllVoxelsInEachIter) //正确的计算方法，但是不收敛，需要修改
   {
     // Make one update for each voxel at a time.
     for (size_t iter = 0; iter < KILLING_MAX_ITERATIONS; iter++)
     {
       // std::cout << iter << std::endl;
       DisplacementField *currIterDeformation = nullptr;
-      if (UsePreviousIterationDeformationField)
-        currIterDeformation = createZeroDisplacementField(*src);
+	  double maxVectorUpdateNorm = 0;
+	  //以下命名有误导性，实际上是新建一个空的临时引力场以存储vox wise的梯度更新，每次vox wize计算能量都使用上一次统一
+	  // 迭代得到的形变场srcToDest，全部vox计算完成后，把这个临时形变场统一更新到上一步的形变场srcToDest上。
+      if (UsePreviousIterationDeformationField)  //
+        currIterDeformation = createZeroDisplacementField(*src);  
 #ifndef DISABLE_OPENMP
 #pragma omp parallel for schedule(dynamic)
 #endif
@@ -283,7 +290,9 @@ void KillingFusion::computeDisplacementField(const SDF *src,
 
             // Optimize All Energies between Source Grid and Desination Grid
             Eigen::Vector3d gradient = computeEnergyGradient(src, dest, srcToDest, spatialIndex);
-            Eigen::Vector3d displacementUpdate = -alpha * gradient;
+            Eigen::Vector3d displacementUpdate = -alpha * gradient; //当前体素的形变更新量
+
+			maxVectorUpdateNorm = max(maxVectorUpdateNorm,displacementUpdate.norm());
 
             // Trust Region Strategy - Valid only when Data Energy is used.
             if (UseTrustStrategy && EnergyTypeUsed[0] && !EnergyTypeUsed[1] && !EnergyTypeUsed[2])
@@ -313,7 +322,7 @@ void KillingFusion::computeDisplacementField(const SDF *src,
                 break;
             }
 
-            if (UsePreviousIterationDeformationField)
+            if (UsePreviousIterationDeformationField) // 在当前体素更新临时形变场的，避免影响其他体素的能量计算
               currIterDeformation->update(spatialIndex, displacementUpdate);
             else
               srcToDest->update(spatialIndex, displacementUpdate);
@@ -345,13 +354,24 @@ void KillingFusion::computeDisplacementField(const SDF *src,
       }
       if (UsePreviousIterationDeformationField)
       {
+		//所有体素计算完成后，把临时形变场保存的形变增量统一更新到原形变场上。
         *srcToDest = *srcToDest + *currIterDeformation;
         delete currIterDeformation;
       }
+	  //没有迭代提前终止的机制？依据论文作者：Registration is terminated when the magnitude of the maximum vector update
+	  // in Ψ falls below a threshold of 0.1 mm. 加入终止条件
+	  // 事实证明原程序根本不收敛，需要修改bug
+	  cout << "迭代次数:" << iter << "最大更新:" << maxVectorUpdateNorm << endl;
+	  if (maxVectorUpdateNorm < 0.1 / 1000) {
+		  cout << "迭代次数:" << iter << endl;
+		  break;
+	  }
     }
   }
   else
   {
+	//针对每个体素进行迭代，直到收敛再迭代第二个体素，应该是错误的，应该要统一考虑才对
+
 #ifndef MY_DEBUG
 #pragma omp parallel for schedule(dynamic)
 #endif
@@ -396,6 +416,7 @@ void KillingFusion::computeDisplacementField(const SDF *src,
   }
 }
 
+// 通过计算式8、9、10得到能量方程式1的梯度
 Eigen::Vector3d KillingFusion::computeEnergyGradient(const SDF *src,
                                                      const SDF *dest,
                                                      const DisplacementField *srcDisplacementField,
@@ -451,6 +472,7 @@ Eigen::Vector3d KillingFusion::computeDataEnergyGradient(const SDF *src,
   //   srcPointDistanceGradient.normalize(); // only direction is required
   double srcPointDistance = src->getDistance(spatialIndex, srcDisplacementField);
   double destPointDistance = dest->getDistanceAtIndex(spatialIndex);
+  // computeDistanceGradient 差分的分母是以体素为单位的(为了避免分母过小导致误差)，不是实际距离 这里要换算回实际距离
   return (srcPointDistance - destPointDistance) / VoxelSize * srcPointDistanceGradient.array();
 }
 
@@ -471,18 +493,20 @@ Eigen::Vector3d KillingFusion::computeLevelSetEnergyGradient(const SDF *src,
 
   // Compute Hessian
   Eigen::Matrix3d hessian = src->computeDistanceHessian(spatialIndex, srcDisplacementField);
+  // 这里海森矩阵和导数都是基于体素单元求导的，并没有换算到米质单位，岂不是算错了？ 不过作为正则项，可能影响不严重
   Eigen::Vector3d levelSetGrad = hessian * grad * (grad.norm() - 1) / (grad.norm() + epsilon);
   return levelSetGrad;
 }
 
+// 计算相机视场平头锥体的最大边界
 std::pair<Eigen::Vector3d, Eigen::Vector3d> KillingFusion::computeBounds(int w, int h, double minDepth, double maxDepth)
 {
   // Create frustum for the camera
   Eigen::MatrixXd cornerPoints;
   cornerPoints.resize(3, 8);
   cornerPoints << 0, 0, w - 1, w - 1, 0, 0, w - 1, w - 1,
-      0, h - 1, h - 1, 0, 0, h - 1, h - 1, 0,
-      1, 1, 1, 1, 1, 1, 1, 1;
+                  0, h - 1, h - 1, 0, 0, h - 1, h - 1, 0,
+                  1, 1, 1, 1, 1, 1, 1, 1;
 
   Eigen::Matrix<double, 1, 8> cornersDepth;
   cornersDepth << minDepth, minDepth, minDepth, minDepth,
@@ -497,7 +521,7 @@ std::pair<Eigen::Vector3d, Eigen::Vector3d> KillingFusion::computeBounds(int w, 
 
   // Compute the frustum in the Camera Coordinate System(CCS)
   imagePoints.conservativeResize(4, 8); // Resize from 3x8 to 4x8
-  imagePoints.topLeftCorner(2, 4) =
+  imagePoints.topLeftCorner(2, 4) =      // 从边角开始提取子矩阵
       imagePoints.topLeftCorner(2, 4) * minDepth; // Multiply front four corners with minDepth
   imagePoints.topRightCorner(2, 4) =
       imagePoints.topRightCorner(2, 4) * maxDepth; // Multiply back four corners with maxDepth

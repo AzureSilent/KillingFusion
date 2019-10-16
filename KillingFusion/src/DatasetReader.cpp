@@ -54,6 +54,8 @@ std::vector<cv::Mat> DatasetReader::getImages(int frameIndex)
   std::string suffix = frameSuffix.str();
   std::string colorFile = m_imageDir + "/color_" + suffix + ".png";
   std::string depthFile = m_imageDir + "/depth_" + suffix + ".png";
+  //std::string colorFile = m_imageDir + "/frame-" + suffix + "color.png";
+  //std::string depthFile = m_imageDir + "/frame-" + suffix + "depth.png";
   std::string omaskFile = m_imageDir + "/omask_" + suffix + ".png";
 
   std::vector<cv::Mat> cdImages;
@@ -71,6 +73,8 @@ int DatasetReader::getNumImageFiles() const
   return m_numImageFiles;
 }
 
+// 设置数据中深度的阈值，并更新类成员。目前是读取config中的固定值，
+// MaxDepthValues 有助于把较远的背景去掉
 void DatasetReader::analyzeMinMaxDepthValues(const DEFORMABLE_DATASET dataset)
 {
   if (dataset < 2) // Always true in current case.

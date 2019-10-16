@@ -18,7 +18,7 @@ inline double interpolate2D(double v_00, double v_01, double v_10, double v_11, 
 inline double interpolate3D(double v_000, double v_001, double v_010, double v_011,
                     double v_100, double v_101, double v_110, double v_111,
                     double x, double y, double z)
-{
+{	// 原作者在赋值时使用了zyx的顺序.
     double s = interpolate2D(v_000, v_001, v_010, v_011, x, y);
     double t = interpolate2D(v_100, v_101, v_110, v_111, x, y);
     return interpolate1D(s, t, z);

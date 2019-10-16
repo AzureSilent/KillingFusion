@@ -1,0 +1,12 @@
+data/
+build/
+cmake-build-debug/
+cmake-build-release/
+*.pdf
+output/
+
+.vs/
+FreeImage/
+kfBuild/
+packages/
+FreeImage3180Win32Win64.zip

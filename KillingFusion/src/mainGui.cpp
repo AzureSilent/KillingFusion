@@ -133,7 +133,7 @@ void renderImage(cv::Mat image)
   cv::flip(image, flippedImage, 0); // Opencv 0,0 is on topleft but opengl has 0,0 on bottom left
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glRasterPos2i(-1, -1);
-  glDrawPixels(flippedImage.cols, flippedImage.rows, GL_BGR, GL_UNSIGNED_BYTE, flippedImage.data);
+  glDrawPixels(flippedImage.cols, flippedImage.rows, GL_BGR_EXT, GL_UNSIGNED_BYTE, flippedImage.data);
 }
 
 void renderDepthImage(cv::Mat depthImage)
@@ -195,8 +195,8 @@ static void draw()
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
 
-  int screenWidth = glutGet(GLUT_SCREEN_WIDTH);
-  int screenHeight = glutGet(GLUT_SCREEN_HEIGHT);
+  int screenWidth = glutGet(GLUT_SCREEN_WIDTH)*0.8;
+  int screenHeight = glutGet(GLUT_SCREEN_HEIGHT)*0.8;
   glViewport(0, 0, screenWidth, screenHeight);
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity(); //Resets to identity Matrix.
@@ -306,7 +306,7 @@ static void draw()
   // Convert to FreeImage format & save to file
   glFinish(); // When doing heavy processing, the glReadPixels does not load all data.
   BYTE *pixels = new BYTE[3 * screenWidth * screenHeight];
-  glReadPixels(0, 0, screenWidth, screenHeight, GL_BGR, GL_UNSIGNED_BYTE, pixels);
+  glReadPixels(0, 0, screenWidth, screenHeight, GL_BGR_EXT, GL_UNSIGNED_BYTE, pixels);
   glFinish();
   FIBITMAP *image = FreeImage_ConvertFromRawBits(pixels, screenWidth, screenHeight, 3 * screenWidth, 24, 0x0000FF, 0xFF0000, 0x00FF00, false);
 
@@ -340,7 +340,9 @@ static void draw()
 
 int main(int argc, char **argv)
 {
+
   datasetReader = new DatasetReader(DATA_DIR);
+
   fusion = new KillingFusion(*datasetReader);
 
   // Create output directory to save screenshot
@@ -365,7 +367,10 @@ int main(int argc, char **argv)
   glFinish();               // First go full screen
   glutDisplayFunc(draw);
   initGL(1920, 1080);
-  glutFullScreen();
+  glutReshapeWindow(1920*0.8, 1080*0.8);
+  // glutFullScreen();
+
+  //KillingFusion::KillingFusion 中设置了最多fuse50帧
 
   // Run Main Loop
   glutMainLoop();
